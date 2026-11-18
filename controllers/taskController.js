@@ -11,15 +11,20 @@ exports.create = async (req, res, next) => {
 
   try {
     const task = await prisma.task.create({
+
       data: {
         title: value.title,
         isCompleted: value.isCompleted,
+        priority: value.priority,
         userId: global.user_id,
       },
+
+
       select: {
         id: true,
         title: true,
         isCompleted: true,
+        priority: true,
       },
     });
 
