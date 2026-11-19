@@ -14,12 +14,15 @@ exports.create = async (req, res, next) => {
       data: {
         title: value.title,
         isCompleted: value.isCompleted,
+        priority: value.priority,
         userId: global.user_id,
       },
+
       select: {
         id: true,
         title: true,
         isCompleted: true,
+        priority: true,
       },
     });
 
@@ -30,24 +33,70 @@ exports.create = async (req, res, next) => {
 };
 
 // LIST the current user's tasks
+
 exports.index = async (req, res, next) => {
   try {
+    // Pagination
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit, 10) || 10);
+    const skip = (page - 1) * limit;
+
+    // Search filtering
+    const whereClause = { userId: global.user_id };
+
+    if (req.query.find) {
+      whereClause.title = {
+        contains: req.query.find,
+        mode: "insensitive",
+      };
+    }
+
+    // Fetch tasks with related user information
     const tasks = await prisma.task.findMany({
-      where: {
-        userId: global.user_id,
-      },
+      where: whereClause,
       select: {
         id: true,
         title: true,
         isCompleted: true,
+        priority: true,
+        createdAt: true,
+        User: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
       },
+      skip: skip,
+      take: limit,
+      orderBy: { createdAt: "desc" },
     });
 
     if (tasks.length === 0) {
-      return res.status(404).json({ message: "No tasks found." });
+      return res.status(404).json({
+        message: "No tasks found.",
+      });
     }
 
-    return res.status(200).json(tasks);
+    // Count matching tasks
+    const totalTasks = await prisma.task.count({
+      where: whereClause,
+    });
+
+    // Pagination metadata
+    const pagination = {
+      page,
+      limit,
+      total: totalTasks,
+      pages: Math.ceil(totalTasks / limit),
+      hasNext: page * limit < totalTasks,
+      hasPrev: page > 1,
+    };
+
+    return res.status(200).json({
+      tasks,
+      pagination,
+    });
   } catch (err) {
     return next(err);
   }
@@ -67,10 +116,19 @@ exports.show = async (req, res, next) => {
         id: taskId,
         userId: global.user_id,
       },
+
       select: {
         id: true,
         title: true,
         isCompleted: true,
+        priority: true,
+        createdAt: true,
+        User: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
       },
     });
 
@@ -105,10 +163,12 @@ exports.update = async (req, res, next) => {
         userId: global.user_id,
       },
       data: value,
+
       select: {
         id: true,
         title: true,
         isCompleted: true,
+        priority: true,
       },
     });
 
@@ -149,6 +209,54 @@ exports.deleteTask = async (req, res, next) => {
       return res.status(404).json({ message: "Task not found." });
     }
 
+    return next(err);
+  }
+};
+
+// CREATE multiple tasks at once
+exports.bulkCreate = async (req, res, next) => {
+  const { tasks } = req.body || {};
+
+  // Check that tasks is a nonempty array
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    return res.status(400).json({
+      error: "Invalid request data. Expected an array of tasks.",
+    });
+  }
+
+  // Validate every task before saving anything
+  const validTasks = [];
+
+  for (const task of tasks) {
+    const { error, value } = taskSchema.validate(task);
+
+    if (error) {
+      return res.status(400).json({
+        error: "Validation failed",
+        details: error.details,
+      });
+    }
+
+    validTasks.push({
+      title: value.title,
+      isCompleted: value.isCompleted,
+      priority: value.priority,
+      userId: global.user_id,
+    });
+  }
+
+  try {
+    const result = await prisma.task.createMany({
+      data: validTasks,
+      skipDuplicates: false,
+    });
+
+    return res.status(201).json({
+      message: "Bulk task creation successful",
+      tasksCreated: result.count,
+      totalRequested: validTasks.length,
+    });
+  } catch (err) {
     return next(err);
   }
 };
