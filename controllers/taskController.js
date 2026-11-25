@@ -72,12 +72,6 @@ exports.index = async (req, res, next) => {
       orderBy: { createdAt: "desc" },
     });
 
-    if (tasks.length === 0) {
-      return res.status(404).json({
-        message: "No tasks found.",
-      });
-    }
-
     // Count matching tasks
     const totalTasks = await prisma.task.count({
       where: whereClause,
