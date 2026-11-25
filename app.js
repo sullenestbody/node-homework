@@ -3,22 +3,35 @@ const timeRouter = require("./routes/timeRoutes");
 const userRouter = require("./routes/userRoutes");
 const notFound = require("./middleware/not-found");
 const errorHandler = require("./middleware/error-handler");
-const authMiddleware = require("./middleware/auth");
+const jwtMiddleware = require("./middleware/jwtMiddleware");
 const taskRouter = require("./routes/taskRoutes");
 const app = express();
 const prisma = require("./db/prisma");
 const analyticsRouter = require("./routes/analyticsRoutes");
-// Temporary in-memory database
-global.user_id = null;
+const cookieParser = require("cookie-parser");
+const helmet = require("helmet");
+const { xss } = require("express-xss-sanitizer");
+const rateLimiter = require("express-rate-limit");
+app.set("trust proxy", 1);
 
-// Built-in middleware
+// Security middleware
+app.use(
+  rateLimiter({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+  }),
+);
+
+app.use(helmet());
+app.use(cookieParser());
 app.use(express.json());
+app.use(xss());
 
 // Routes
 app.use("/api", timeRouter);
 app.use("/api/users", userRouter);
-app.use("/api/tasks", authMiddleware, taskRouter);
-app.use("/api/analytics", authMiddleware, analyticsRouter);
+app.use("/api/tasks", jwtMiddleware, taskRouter);
+app.use("/api/analytics", jwtMiddleware, analyticsRouter);
 app.get("/health", async (req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
