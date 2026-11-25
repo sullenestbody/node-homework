@@ -7,6 +7,7 @@ const authMiddleware = require("./middleware/auth");
 const taskRouter = require("./routes/taskRoutes");
 const app = express();
 const prisma = require("./db/prisma");
+const analyticsRouter = require("./routes/analyticsRoutes");
 // Temporary in-memory database
 global.user_id = null;
 
@@ -17,7 +18,7 @@ app.use(express.json());
 app.use("/api", timeRouter);
 app.use("/api/users", userRouter);
 app.use("/api/tasks", authMiddleware, taskRouter);
-
+app.use("/api/analytics", authMiddleware, analyticsRouter);
 app.get("/health", async (req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;

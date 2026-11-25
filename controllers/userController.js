@@ -22,6 +22,7 @@ async function comparePassword(inputPassword, storedHash) {
 }
 
 // REGISTER
+
 async function register(req, res, next) {
   const { error, value } = userSchema.validate(req.body || {}, {
     abortEarly: false,
@@ -37,29 +38,77 @@ async function register(req, res, next) {
   const hashedPassword = await hashPassword(password);
 
   try {
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        hashedPassword,
-      },
-      select: {
-        name: true,
-        email: true,
-        id: true,
-      },
+    const result = await prisma.$transaction(async (tx) => {
+      // Create the user
+      const newUser = await tx.user.create({
+        data: {
+          name,
+          email,
+          hashedPassword,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          createdAt: true,
+        },
+      });
+
+      // Prepare three welcome tasks
+      const welcomeTaskData = [
+        {
+          title: "Complete your profile",
+          userId: newUser.id,
+          priority: "medium",
+        },
+        {
+          title: "Add your first task",
+          userId: newUser.id,
+          priority: "high",
+        },
+        {
+          title: "Explore the app",
+          userId: newUser.id,
+          priority: "low",
+        },
+      ];
+
+      // Create all three tasks at once
+      await tx.task.createMany({
+        data: welcomeTaskData,
+      });
+
+      // Retrieve the newly created tasks
+      const welcomeTasks = await tx.task.findMany({
+        where: {
+          userId: newUser.id,
+          title: {
+            in: welcomeTaskData.map((task) => task.title),
+          },
+        },
+        select: {
+          id: true,
+          title: true,
+          isCompleted: true,
+          userId: true,
+          priority: true,
+        },
+      });
+
+      return { user: newUser, welcomeTasks };
     });
 
-    global.user_id = user.id;
+    global.user_id = result.user.id;
 
     return res.status(201).json({
-      name: user.name,
-      email: user.email,
+      user: result.user,
+      welcomeTasks: result.welcomeTasks,
+      transactionStatus: "success",
     });
   } catch (err) {
-    if (err.name === "PrismaClientKnownRequestError" && err.code === "P2002") {
+    if (err.code === "P2002") {
       return res.status(400).json({
-        message: "User already exists",
+        error: "Email already registered",
       });
     }
 
